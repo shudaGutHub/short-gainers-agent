@@ -1,0 +1,45 @@
+{
+  "metadata": {
+    "description": "Sample TOP_GAINERS_LOSERS response for testing",
+    "date": "2025-01-27"
+  },
+  "top_gainers": [
+    {
+      "ticker": "ACME",
+      "price": "45.67",
+      "change_amount": "12.34",
+      "change_percentage": "37.0123%",
+      "volume": "5678901"
+    },
+    {
+      "ticker": "BETA",
+      "price": "23.45",
+      "change_amount": "5.67",
+      "change_percentage": "31.8765%",
+      "volume": "2345678"
+    },
+    {
+      "ticker": "GAMA",
+      "price": "89.01",
+      "change_amount": "18.23",
+      "change_percentage": "25.7654%",
+      "volume": "1234567"
+    },
+    {
+      "ticker": "DELT",
+      "price": "12.34",
+      "change_amount": "2.45",
+      "change_percentage": "24.7821%",
+      "volume": "8901234"
+    },
+    {
+      "ticker": "EPSI",
+      "price": "156.78",
+      "change_amount": "28.90",
+      "change_percentage": "22.6012%",
+      "volume": "3456789"
+    }
+  ],
+  "top_losers": [],
+  "most_actively_traded": []
+}
