@@ -71,24 +71,57 @@ class DashboardData:
     bollinger_percent_above: Optional[float] = None
     atr_14: Optional[float] = None
     atr_prior: Optional[float] = None
-    
+
+    # MACD indicators (NEW)
+    macd_line: Optional[float] = None
+    macd_signal: Optional[float] = None
+    macd_histogram: Optional[float] = None
+    macd_histogram_declining: bool = False
+
+    # Volume analysis (NEW)
+    volume_ratio: Optional[float] = None  # Current / Average
+    volume_confirming: bool = True  # Volume confirms price direction
+
+    # Momentum (NEW)
+    roc_1d: Optional[float] = None  # 1-day rate of change
+    roc_5d: Optional[float] = None  # 5-day rate of change
+
+    # Pattern detection (NEW)
+    lower_high_forming: bool = False
+    exhaustion_candle: bool = False
+
     # Risk flags
     risk_flags: list = None
     composite_risk: str = "MEDIUM"
-    
+
     # Catalyst/Sentiment
     catalyst_type: str = "UNKNOWN"
     has_fundamental_catalyst: bool = False
     company_statement: Optional[str] = None
     exchange_inquiry: bool = False
-    
+    news_summary: Optional[str] = None  # NEW
+    sentiment_level: str = "MIXED"  # NEW
+    sentiment_confidence: float = 0.5  # NEW
+
     # Scoring
     technical_score: float = 0.0
     sentiment_adjustment: float = 0.0
     risk_penalties: dict = None
     final_score: float = 0.0
     expression: str = "AVOID"
+
+    # Score breakdown (NEW - for transparency)
+    rsi_score: float = 0.0
+    bb_score: float = 0.0
+    macd_score: float = 0.0
+    volume_score: float = 0.0
+    momentum_score: float = 0.0
+    pattern_score: float = 0.0
     
+    # Warrant info
+    is_warrant: bool = False
+    underlying_ticker: Optional[str] = None
+
     # Financial data
     financials: Optional[FinancialData] = None
     
@@ -530,6 +563,18 @@ def generate_dashboard_html(data: DashboardData) -> str:
             text-decoration: none;
         }}
         .back-link:hover {{ text-decoration: underline; }}
+
+        .warrant-badge {{
+            display: inline-block;
+            background: rgba(251, 191, 36, 0.25);
+            border: 1px solid #fbbf24;
+            color: #fbbf24;
+            padding: 6px 18px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-top: 10px;
+        }}
     </style>
 </head>
 <body>
@@ -540,6 +585,7 @@ def generate_dashboard_html(data: DashboardData) -> str:
         <div class="header">
             <div class="ticker">{html.escape(data.ticker)}</div>
             <div class="company">{html.escape(data.company_name)} &bull; {html.escape(data.exchange)}</div>
+            {'<div class="warrant-badge">WARRANT &mdash; Underlying: ' + html.escape(data.underlying_ticker or "") + '</div>' if data.is_warrant else ''}
             <div class="price-change">{data.change_percent:+.2f}%</div>
             <div class="price-current">${data.current_price:.2f} (from ${data.prior_close:.2f})</div>
         </div>
@@ -588,23 +634,69 @@ def generate_dashboard_html(data: DashboardData) -> str:
                 <div class="card-title">&#128200; Technical Indicators</div>
                 <div class="metric-row">
                     <span class="metric-label">RSI (14)</span>
-                    <span class="metric-value {"danger" if data.rsi_14 and data.rsi_14 > 80 else "warning" if data.rsi_14 and data.rsi_14 > 70 else ""}">{data.rsi_14:.2f if data.rsi_14 else "N/A"}</span>
+                    <span class="metric-value {"danger" if data.rsi_14 and data.rsi_14 > 80 else "warning" if data.rsi_14 and data.rsi_14 > 70 else ""}">{f"{data.rsi_14:.2f}" if data.rsi_14 is not None else "N/A"}</span>
                 </div>
                 <div class="gauge"><div class="gauge-fill {"extreme" if data.rsi_14 and data.rsi_14 > 80 else "high" if data.rsi_14 and data.rsi_14 > 70 else "medium"}" style="width: {rsi_width}%"></div></div>
-                
+
                 <div class="metric-row">
                     <span class="metric-label">Bollinger Position</span>
                     <span class="metric-value {"danger" if data.bollinger_percent_above and data.bollinger_percent_above > 50 else "warning" if data.bollinger_percent_above and data.bollinger_percent_above > 20 else ""}">{f"{data.bollinger_percent_above:.0f}% Above Upper" if data.bollinger_percent_above and data.bollinger_percent_above > 0 else "Within Bands" if data.bollinger_percent_above is not None else "N/A"}</span>
                 </div>
                 <div class="gauge"><div class="gauge-fill {"extreme" if data.bollinger_percent_above and data.bollinger_percent_above > 50 else "high" if data.bollinger_percent_above and data.bollinger_percent_above > 20 else "medium"}" style="width: {bb_width}%"></div></div>
-                
+
                 <div class="metric-row">
                     <span class="metric-label">ATR (14)</span>
-                    <span class="metric-value {"danger" if atr_expansion > 5 else "warning" if atr_expansion > 2 else ""}">${data.atr_14:.2f if data.atr_14 else 0:.2f} ({atr_expansion:.1f}x expansion)</span>
+                    <span class="metric-value {"danger" if atr_expansion > 5 else "warning" if atr_expansion > 2 else ""}">${f"{data.atr_14:.2f}" if data.atr_14 is not None else "0.00"} ({atr_expansion:.1f}x expansion)</span>
                 </div>
                 <div class="metric-row">
                     <span class="metric-label">Off Intraday High</span>
                     <span class="metric-value warning">{off_high_pct:.1f}%</span>
+                </div>
+            </div>
+
+            <!-- MACD & Momentum (NEW) -->
+            <div class="card">
+                <div class="card-title">&#128200; MACD & Momentum</div>
+                <div class="metric-row">
+                    <span class="metric-label">MACD Line</span>
+                    <span class="metric-value">{f"{data.macd_line:.4f}" if data.macd_line is not None else "N/A"}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Signal Line</span>
+                    <span class="metric-value">{f"{data.macd_signal:.4f}" if data.macd_signal is not None else "N/A"}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Histogram</span>
+                    <span class="metric-value {"success" if data.macd_histogram_declining else "warning"}">{f"{data.macd_histogram:.4f}" if data.macd_histogram is not None else "N/A"} {"(Declining)" if data.macd_histogram_declining else ""}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">1-Day ROC</span>
+                    <span class="metric-value {"danger" if data.roc_1d and data.roc_1d > 30 else "warning" if data.roc_1d and data.roc_1d > 20 else ""}">{f"{data.roc_1d:.1f}%" if data.roc_1d is not None else "N/A"}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">5-Day ROC</span>
+                    <span class="metric-value {"danger" if data.roc_5d and data.roc_5d > 50 else "warning" if data.roc_5d and data.roc_5d > 30 else ""}">{f"{data.roc_5d:.1f}%" if data.roc_5d is not None else "N/A"}</span>
+                </div>
+            </div>
+
+            <!-- Volume & Patterns (NEW) -->
+            <div class="card">
+                <div class="card-title">&#128202; Volume & Patterns</div>
+                <div class="metric-row">
+                    <span class="metric-label">Volume Ratio</span>
+                    <span class="metric-value {"danger" if data.volume_ratio and data.volume_ratio > 3 else "warning" if data.volume_ratio and data.volume_ratio > 1.5 else ""}">{f"{data.volume_ratio:.1f}x" if data.volume_ratio is not None else "N/A"} avg</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Volume Confirms Price</span>
+                    <span class="metric-value {"danger" if not data.volume_confirming else "success"}">{"NO - Divergence" if not data.volume_confirming else "YES"}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Lower High Pattern</span>
+                    <span class="metric-value {"success" if data.lower_high_forming else ""}">{" DETECTED" if data.lower_high_forming else "Not Detected"}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Exhaustion Candle</span>
+                    <span class="metric-value {"success" if data.exhaustion_candle else ""}">{"DETECTED" if data.exhaustion_candle else "Not Detected"}</span>
                 </div>
             </div>
             
@@ -633,32 +725,84 @@ def generate_dashboard_html(data: DashboardData) -> str:
                     <span class="metric-value {"success" if not data.has_fundamental_catalyst else "danger"}">{html.escape(data.catalyst_type)}</span>
                 </div>
                 <div class="metric-row">
+                    <span class="metric-label">Sentiment Level</span>
+                    <span class="metric-value {"danger" if data.sentiment_level in ["STRONGLY_POSITIVE", "POSITIVE"] else "success" if data.sentiment_level in ["NEGATIVE", "STRONGLY_NEGATIVE"] else "warning"}">{html.escape(data.sentiment_level.replace("_", " "))}</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Confidence</span>
+                    <span class="metric-value">{data.sentiment_confidence:.0%}</span>
+                </div>
+                <div class="metric-row">
                     <span class="metric-label">Fundamental Catalyst</span>
                     <span class="metric-value {"danger" if data.has_fundamental_catalyst else "success"}">{"IDENTIFIED" if data.has_fundamental_catalyst else "NONE IDENTIFIED"}</span>
                 </div>
+                {f'<div class="metric-row"><span class="metric-label">News Summary</span><span class="metric-value">{html.escape(data.news_summary[:40] + "..." if data.news_summary and len(data.news_summary) > 40 else data.news_summary or "N/A")}</span></div>'}
                 {f'<div class="metric-row"><span class="metric-label">Company Statement</span><span class="metric-value">{html.escape(data.company_statement[:30] + "..." if len(data.company_statement) > 30 else data.company_statement)}</span></div>' if data.company_statement else ""}
                 {f'<div class="metric-row"><span class="metric-label">Exchange Inquiry</span><span class="metric-value warning">Yes - unusual activity</span></div>' if data.exchange_inquiry else ""}
-                <div class="catalyst-box">
-                    <span class="catalyst-type">{"&#10004; FAVORABLE FOR SHORT" if not data.has_fundamental_catalyst else "&#10008; UNFAVORABLE - Fundamental catalyst present"}</span><br>
+                <div class="catalyst-box" style="{"background: rgba(239, 68, 68, 0.1); border-color: #ef4444;" if data.has_fundamental_catalyst else ""}">
+                    <span class="catalyst-type" style="{"color: #ef4444;" if data.has_fundamental_catalyst else ""}">{"&#10004; FAVORABLE FOR SHORT" if not data.has_fundamental_catalyst else "&#10008; UNFAVORABLE - Fundamental catalyst present"}</span><br>
                     <small>{"No fundamental justification for the move." if not data.has_fundamental_catalyst else "Move may be justified by fundamental news."}</small>
                 </div>
             </div>
             
             <!-- Score Breakdown -->
-            <div class="card">
-                <div class="card-title">&#129518; Score Calculation</div>
-                <div class="metric-row">
-                    <span class="metric-label">Technical Score</span>
-                    <span class="metric-value">+{data.technical_score:.1f}</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Sentiment Adjustment</span>
-                    <span class="metric-value {"success" if data.sentiment_adjustment > 0 else "danger" if data.sentiment_adjustment < 0 else ""}">{data.sentiment_adjustment:+.1f}</span>
-                </div>
-                {penalties_html}
-                <div class="metric-row" style="border-top: 2px solid rgba(255,255,255,0.2); margin-top: 10px; padding-top: 15px;">
-                    <span class="metric-label"><strong>FINAL SCORE</strong></span>
-                    <span class="metric-value" style="font-size: 1.5rem; color: #60a5fa;"><strong>{data.final_score:.1f} / 10</strong></span>
+            <div class="card" style="grid-column: span 2;">
+                <div class="card-title">&#129518; Score Calculation (6-Component Technical + Sentiment)</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+                    <div>
+                        <h4 style="color: #60a5fa; margin-bottom: 10px;">Technical Components</h4>
+                        <div class="metric-row">
+                            <span class="metric-label">RSI Score</span>
+                            <span class="metric-value">+{data.rsi_score:.1f}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Bollinger Score</span>
+                            <span class="metric-value">+{data.bb_score:.1f}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">MACD Score</span>
+                            <span class="metric-value">+{data.macd_score:.1f}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Volume Score</span>
+                            <span class="metric-value">+{data.volume_score:.1f}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Momentum Score</span>
+                            <span class="metric-value">+{data.momentum_score:.1f}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Pattern Score</span>
+                            <span class="metric-value">+{data.pattern_score:.1f}</span>
+                        </div>
+                        <div class="metric-row" style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 5px; padding-top: 10px;">
+                            <span class="metric-label"><strong>Technical Total</strong></span>
+                            <span class="metric-value"><strong>+{data.technical_score:.1f}</strong></span>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color: #60a5fa; margin-bottom: 10px;">Sentiment Adjustment</h4>
+                        <div class="metric-row">
+                            <span class="metric-label">Catalyst Type</span>
+                            <span class="metric-value">{html.escape(data.catalyst_type)}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Sentiment Level</span>
+                            <span class="metric-value">{html.escape(data.sentiment_level.replace("_", " "))}</span>
+                        </div>
+                        <div class="metric-row" style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 5px; padding-top: 10px;">
+                            <span class="metric-label"><strong>Sentiment Adj</strong></span>
+                            <span class="metric-value {"success" if data.sentiment_adjustment > 0 else "danger" if data.sentiment_adjustment < 0 else ""}"><strong>{data.sentiment_adjustment:+.1f}</strong></span>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color: #ef4444; margin-bottom: 10px;">Risk Penalties</h4>
+                        {penalties_html}
+                        <div class="metric-row" style="border-top: 2px solid rgba(255,255,255,0.2); margin-top: 10px; padding-top: 15px;">
+                            <span class="metric-label"><strong>FINAL SCORE</strong></span>
+                            <span class="metric-value" style="font-size: 1.5rem; color: #60a5fa;"><strong>{data.final_score:.1f} / 10</strong></span>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -738,16 +882,17 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
         }.get(c.expression, "#888")
         
         flags_html = " ".join([f'<span class="flag-mini">{f}</span>' for f in c.risk_flags[:2]])
-        
+        warrant_marker = ' <span style="color: #fbbf24; font-weight: 600;">(W)</span>' if c.is_warrant else ""
+
         rows_html += f'''<tr onclick="window.location='{c.ticker}.html'" style="cursor: pointer;">
             <td>{i}</td>
-            <td><strong>{html.escape(c.ticker)}</strong></td>
+            <td><strong>{html.escape(c.ticker)}</strong>{warrant_marker}</td>
             <td>{html.escape(c.company_name[:25] + "..." if len(c.company_name) > 25 else c.company_name)}</td>
             <td class="{score_class}">{c.final_score:.1f}</td>
             <td style="color: {expr_color};">{c.expression.replace("_", " ")}</td>
             <td class="{"danger" if c.change_percent > 50 else "warning" if c.change_percent > 20 else ""}">{c.change_percent:+.1f}%</td>
             <td>${c.current_price:.2f}</td>
-            <td>{c.rsi_14:.1f if c.rsi_14 else "N/A"}</td>
+            <td>{f"{c.rsi_14:.1f}" if c.rsi_14 is not None else "N/A"}</td>
             <td>{flags_html}</td>
         </tr>\n'''
     
@@ -913,6 +1058,7 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
             <div class="legend-item"><div class="legend-dot" style="background: #22c55e;"></div> Score 7+ (Strong)</div>
             <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div> Score 5-7 (Moderate)</div>
             <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Score &lt;5 (Weak/Avoid)</div>
+            <div class="legend-item"><span style="color: #fbbf24; font-weight: 600;">(W)</span> = Warrant</div>
         </div>
         
         <div class="footer">
