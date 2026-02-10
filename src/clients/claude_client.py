@@ -87,8 +87,13 @@ class ClaudeClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
         if self._client:
             await self._client.aclose()
+            self._client = None
 
     async def analyze_news(
         self,
@@ -109,7 +114,7 @@ class ClaudeClient:
         """
         if not news_feed.items:
             return NewsAssessment(
-                catalyst_type=CatalystType.UNKNOWN,
+                catalyst_type=CatalystClassification.UNKNOWN,
                 sentiment=SentimentLevel.MIXED,
                 summary="No recent news found",
                 justifies_repricing=False,
@@ -134,7 +139,7 @@ class ClaudeClient:
         except Exception as e:
             # Return conservative default on any error
             return NewsAssessment(
-                catalyst_type=CatalystType.UNKNOWN,
+                catalyst_type=CatalystClassification.UNKNOWN,
                 sentiment=SentimentLevel.MIXED,
                 summary=f"Analysis failed: {str(e)[:50]}",
                 justifies_repricing=False,
@@ -144,7 +149,7 @@ class ClaudeClient:
     async def _call_api(self, prompt: str) -> str:
         """Make API call to Claude."""
         if not self._client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+            self._client = httpx.AsyncClient(timeout=self.timeout)
 
         headers = {
             "Content-Type": "application/json",

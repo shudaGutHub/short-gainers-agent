@@ -152,12 +152,14 @@ async def run_pipeline(
                 price_task = fetch_price_data(
                     ticker=ticker,
                     av_client=av_client,
-                    lookback_days=settings.lookback_days,
+                    yf_client=None,
+                    days=settings.lookback_days,
                     intraday_interval=settings.intraday_interval,
                 )
                 fundamentals_task = fetch_fundamentals(
                     ticker=ticker,
                     av_client=av_client,
+                    yf_client=None,
                 )
                 news_task = fetch_news(
                     ticker=ticker,
@@ -177,11 +179,11 @@ async def run_pipeline(
                 
                 fundamentals = None
                 if not isinstance(fundamentals_result, Exception):
-                    fundamentals = fundamentals_result.fundamentals
+                    fundamentals = fundamentals_result.data
                 
                 news_feed = None
                 if not isinstance(news_result, Exception):
-                    news_feed = news_result.news_feed
+                    news_feed = news_result.feed
                 
                 # Step 3: Pre-filter
                 filtered = prefilter_ticker(

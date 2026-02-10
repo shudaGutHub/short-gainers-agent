@@ -67,8 +67,13 @@ class AlphaVantageClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
         if self._client:
             await self._client.aclose()
+            self._client = None
 
     async def _throttle(self) -> None:
         """Enforce rate limiting between requests."""
@@ -81,7 +86,7 @@ class AlphaVantageClient:
     async def _request(self, params: dict[str, str]) -> dict[str, Any]:
         """Make rate-limited request to AV API."""
         if not self._client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+            self._client = httpx.AsyncClient(timeout=self.timeout)
 
         await self._throttle()
 
