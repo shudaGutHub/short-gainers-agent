@@ -12,10 +12,26 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Union, TYPE_CHECKING
 
-from src.batch_processor import TickerInput
+# Avoid circular import - import at runtime in methods that need it
+if TYPE_CHECKING:
+    from src.batch_processor import TickerInput
+
 from src.clients.nasdaq_client import NasdaqClient, NasdaqCategory, NasdaqTicker
+
+
+# Re-export NasdaqCategory for convenience
+__all__ = [
+    "TickerSource",
+    "SourceConfig",
+    "TickerSourceResult",
+    "TickerSourceManagerConfig",
+    "TickerSourceManager",
+    "NasdaqCategory",
+    "load_watchlist",
+    "load_screener_export",
+]
 
 
 class TickerSource(str, Enum):
@@ -41,7 +57,7 @@ class SourceConfig:
 class TickerSourceResult:
     """Result from fetching a ticker source."""
     source: TickerSource
-    tickers: list[TickerInput]
+    tickers: list  # list[TickerInput] - avoid import at module level
     error: Optional[str] = None
 
     @property
@@ -71,7 +87,7 @@ class TickerSourceManagerConfig:
     alpha_vantage_key: Optional[str] = None
 
     # Manual tickers
-    manual_tickers: list[TickerInput] = field(default_factory=list)
+    manual_tickers: list = field(default_factory=list)  # list[TickerInput]
 
     # Global settings
     max_tickers: int = 50  # Max total tickers after deduplication
@@ -151,6 +167,8 @@ class TickerSourceManager:
 
     async def _fetch_nasdaq(self) -> TickerSourceResult:
         """Fetch tickers from NASDAQ market activity."""
+        from src.batch_processor import TickerInput
+
         try:
             source_config = self.config.sources.get(
                 TickerSource.NASDAQ, SourceConfig()
@@ -189,6 +207,8 @@ class TickerSourceManager:
 
     async def _fetch_alpha_vantage(self) -> TickerSourceResult:
         """Fetch tickers from Alpha Vantage top gainers API."""
+        from src.batch_processor import TickerInput
+
         try:
             import aiohttp
 
@@ -340,7 +360,7 @@ class TickerSourceManager:
 
         return await method()
 
-    async def fetch_all(self) -> list[TickerInput]:
+    async def fetch_all(self) -> list:
         """
         Fetch from all enabled sources and return deduplicated tickers.
 
@@ -358,7 +378,7 @@ class TickerSourceManager:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Collect all tickers with their source priority
-        ticker_map: dict[str, tuple[TickerInput, int]] = {}
+        ticker_map: dict[str, tuple] = {}  # {symbol: (TickerInput, priority)}
 
         for result in results:
             if isinstance(result, Exception):
@@ -386,7 +406,7 @@ class TickerSourceManager:
         # Return just the TickerInput objects, limited to max_tickers
         return [t[0] for t in sorted_tickers[:self.config.max_tickers]]
 
-    async def fetch_all_with_results(self) -> tuple[list[TickerInput], list[TickerSourceResult]]:
+    async def fetch_all_with_results(self) -> tuple[list, list[TickerSourceResult]]:
         """
         Fetch from all enabled sources and return both tickers and results.
 
@@ -410,7 +430,7 @@ class TickerSourceManager:
         ]
 
         # Collect all tickers with their source priority
-        ticker_map: dict[str, tuple[TickerInput, int]] = {}
+        ticker_map: dict[str, tuple] = {}  # {symbol: (TickerInput, priority)}
 
         for result in valid_results:
             if not result.is_success:
@@ -435,7 +455,7 @@ class TickerSourceManager:
         return tickers, valid_results
 
 
-def load_watchlist(filepath: str) -> list[TickerInput]:
+def load_watchlist(filepath: str) -> list:
     """
     Load tickers from a watchlist file.
 
@@ -450,6 +470,8 @@ def load_watchlist(filepath: str) -> list[TickerInput]:
     Returns:
         List of TickerInput objects
     """
+    from src.batch_processor import TickerInput
+
     path = Path(filepath)
     if not path.exists():
         raise FileNotFoundError(f"Watchlist file not found: {filepath}")
@@ -468,7 +490,7 @@ def load_watchlist(filepath: str) -> list[TickerInput]:
 def load_screener_export(
     filepath: str,
     format: Optional[str] = None,
-) -> list[TickerInput]:
+) -> list:
     """
     Load tickers from a screener export file.
 
@@ -502,8 +524,10 @@ def load_screener_export(
         return _load_csv_tickers(filepath)
 
 
-def _load_txt_tickers(filepath: str) -> list[TickerInput]:
+def _load_txt_tickers(filepath: str) -> list:
     """Load tickers from a plain text file (one per line)."""
+    from src.batch_processor import TickerInput
+
     tickers = []
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
@@ -524,8 +548,10 @@ def _load_txt_tickers(filepath: str) -> list[TickerInput]:
     return tickers
 
 
-def _load_csv_tickers(filepath: str) -> list[TickerInput]:
+def _load_csv_tickers(filepath: str) -> list:
     """Load tickers from a CSV file."""
+    from src.batch_processor import TickerInput
+
     tickers = []
 
     with open(filepath, "r", encoding="utf-8", newline="") as f:
@@ -586,8 +612,10 @@ def _load_csv_tickers(filepath: str) -> list[TickerInput]:
     return tickers
 
 
-def _load_json_tickers(filepath: str) -> list[TickerInput]:
+def _load_json_tickers(filepath: str) -> list:
     """Load tickers from a JSON file."""
+    from src.batch_processor import TickerInput
+
     with open(filepath, "r", encoding="utf-8") as f:
         data = json.load(f)
 

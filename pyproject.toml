@@ -20,6 +20,7 @@ dependencies = [
 [project.scripts]
 short-gainers = "src.main:main"
 short-gainers-batch = "src.batch_cli:main"
+short-gainers-web = "src.web_server:main"
 
 [project.optional-dependencies]
 dev = [

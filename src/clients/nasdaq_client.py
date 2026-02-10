@@ -62,7 +62,10 @@ class NasdaqClient:
             active = await client.fetch_most_active(limit=25)
     """
 
-    BASE_URL = "https://api.nasdaq.com/api/screener/stocks"
+    # Primary endpoint for market movers (gainers/losers/active)
+    MARKET_MOVERS_URL = "https://api.nasdaq.com/api/marketmovers"
+    # Fallback screener endpoint
+    SCREENER_URL = "https://api.nasdaq.com/api/screener/stocks"
 
     # NASDAQ API requires specific headers to avoid blocking
     DEFAULT_HEADERS = {
@@ -247,6 +250,109 @@ class NasdaqClient:
             # Log and skip malformed data
             return None
 
+    def _parse_market_mover(self, row: dict) -> Optional[NasdaqTicker]:
+        """
+        Parse a ticker from the market movers API response.
+
+        Args:
+            row: Dictionary with ticker data from market movers API
+
+        Returns:
+            NasdaqTicker object or None if parsing fails
+        """
+        try:
+            ticker = row.get("symbol", "").strip()
+            if not ticker:
+                return None
+
+            name = row.get("name", "").strip()
+
+            # Parse price - format: "$172.06"
+            price_str = str(row.get("lastSalePrice", "0"))
+            price_str = price_str.replace("$", "").replace(",", "").strip()
+            price = Decimal(price_str) if price_str else Decimal("0")
+
+            # Parse change amount - format: "+0.095" or "-2.13"
+            change_str = str(row.get("lastSaleChange", "0"))
+            change_str = change_str.replace("$", "").replace(",", "").replace("+", "").strip()
+            change_amount = Decimal(change_str) if change_str else Decimal("0")
+
+            # Parse change percent - format: "+656.0154%" or "-1.223%"
+            pct_str = str(row.get("change", "0"))
+            pct_str = pct_str.replace("%", "").replace(",", "").replace("+", "").strip()
+            change_percent = Decimal(pct_str) if pct_str else Decimal("0")
+
+            # Volume not directly available in market movers, default to 0
+            volume = 0
+
+            return NasdaqTicker(
+                ticker=ticker,
+                name=name,
+                price=price,
+                change_amount=change_amount,
+                change_percent=change_percent,
+                volume=volume,
+            )
+        except (ValueError, TypeError, KeyError):
+            return None
+
+    async def _fetch_market_movers(
+        self,
+        mover_type: str = "gainers",
+        exchange: str = "nasdaq",
+        limit: int = 25,
+        min_price: float = 0,
+    ) -> list[NasdaqTicker]:
+        """
+        Fetch data from NASDAQ market movers API (primary source).
+
+        Args:
+            mover_type: Type of movers - 'gainers', 'losers', or 'active'
+            exchange: Exchange filter (nasdaq, nyse, amex)
+            limit: Maximum number of results
+            min_price: Minimum price filter
+
+        Returns:
+            List of NasdaqTicker objects
+        """
+        params = {
+            "assetclass": "stocks",
+            "exchange": exchange.lower(),
+        }
+
+        # Map mover type to API parameter
+        if mover_type == "gainers":
+            params["marketmoverstype"] = "gainers"
+        elif mover_type == "losers":
+            params["marketmoverstype"] = "decliners"
+        elif mover_type == "active":
+            params["marketmoverstype"] = "volume"
+
+        data = await self._fetch_with_retry(self.MARKET_MOVERS_URL, params)
+
+        # Navigate to the correct data section
+        stocks_data = data.get("data", {}).get("STOCKS", {})
+
+        # Map mover type to response key
+        section_map = {
+            "gainers": "MostAdvanced",
+            "losers": "MostDeclined",
+            "active": "MostActiveByShareVolume",
+        }
+        section_key = section_map.get(mover_type, "MostAdvanced")
+
+        rows = stocks_data.get(section_key, {}).get("table", {}).get("rows", [])
+
+        tickers = []
+        for row in rows[:limit]:
+            ticker = self._parse_market_mover(row)
+            if ticker:
+                # Apply price filter
+                if float(ticker.price) >= min_price:
+                    tickers.append(ticker)
+
+        return tickers
+
     async def _fetch_screener(
         self,
         sort_column: str,
@@ -257,7 +363,7 @@ class NasdaqClient:
         min_volume: int = 0,
     ) -> list[NasdaqTicker]:
         """
-        Fetch data from NASDAQ screener API.
+        Fetch data from NASDAQ screener API (fallback source).
 
         Args:
             sort_column: Column to sort by (changepct, volume, etc.)
@@ -281,7 +387,7 @@ class NasdaqClient:
         if exchange:
             params["exchange"] = exchange
 
-        data = await self._fetch_with_retry(self.BASE_URL, params)
+        data = await self._fetch_with_retry(self.SCREENER_URL, params)
 
         # Extract rows from response
         rows = data.get("data", {}).get("table", {}).get("rows", [])
@@ -306,22 +412,23 @@ class NasdaqClient:
         """
         Fetch top gainers (stocks with highest % increase).
 
+        Uses the market movers API which provides real-time top gainers
+        from the NASDAQ website.
+
         Args:
             limit: Maximum number of results
-            exchange: Exchange filter
+            exchange: Exchange filter (nasdaq, nyse, amex)
             min_price: Minimum price filter
-            min_volume: Minimum volume filter
+            min_volume: Minimum volume filter (not used for market movers)
 
         Returns:
             List of NasdaqTicker objects sorted by change_percent descending
         """
-        return await self._fetch_screener(
-            sort_column="pctchange",
-            sort_order="desc",
+        return await self._fetch_market_movers(
+            mover_type="gainers",
+            exchange=exchange.lower(),
             limit=limit,
-            exchange=exchange,
             min_price=min_price,
-            min_volume=min_volume,
         )
 
     async def fetch_losers(
@@ -334,22 +441,23 @@ class NasdaqClient:
         """
         Fetch top losers (stocks with highest % decrease).
 
+        Uses the market movers API which provides real-time top decliners
+        from the NASDAQ website.
+
         Args:
             limit: Maximum number of results
-            exchange: Exchange filter
+            exchange: Exchange filter (nasdaq, nyse, amex)
             min_price: Minimum price filter
-            min_volume: Minimum volume filter
+            min_volume: Minimum volume filter (not used for market movers)
 
         Returns:
             List of NasdaqTicker objects sorted by change_percent ascending
         """
-        return await self._fetch_screener(
-            sort_column="pctchange",
-            sort_order="asc",
+        return await self._fetch_market_movers(
+            mover_type="losers",
+            exchange=exchange.lower(),
             limit=limit,
-            exchange=exchange,
             min_price=min_price,
-            min_volume=min_volume,
         )
 
     async def fetch_most_active(
@@ -361,6 +469,35 @@ class NasdaqClient:
     ) -> list[NasdaqTicker]:
         """
         Fetch most active stocks (highest volume).
+
+        Uses the market movers API which provides real-time most active stocks
+        from the NASDAQ website.
+
+        Args:
+            limit: Maximum number of results
+            exchange: Exchange filter (nasdaq, nyse, amex)
+            min_price: Minimum price filter
+            min_volume: Minimum volume filter (not used for market movers)
+
+        Returns:
+            List of NasdaqTicker objects sorted by volume descending
+        """
+        return await self._fetch_market_movers(
+            mover_type="active",
+            exchange=exchange.lower(),
+            limit=limit,
+            min_price=min_price,
+        )
+
+    async def fetch_most_active_screener(
+        self,
+        limit: int = 25,
+        exchange: str = "NASDAQ",
+        min_price: float = 1.0,
+        min_volume: int = 100_000,
+    ) -> list[NasdaqTicker]:
+        """
+        Fetch most active stocks using the screener API (fallback).
 
         Args:
             limit: Maximum number of results

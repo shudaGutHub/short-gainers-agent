@@ -27,6 +27,11 @@ import os
 import sys
 from datetime import datetime
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -66,6 +71,15 @@ Examples:
 
   # Skip financial statements (faster)
   python batch_cli.py --tickers TCGL --no-financials
+
+  # Deploy to Netlify and send WhatsApp notification
+  python batch_cli.py --source nasdaq --deploy --netlify-site your-site-id --notify-whatsapp +1234567890
+
+  # Deploy only (no notification)
+  python batch_cli.py --source nasdaq --deploy --netlify-site singular-douhua-5443a7
+
+  # Send email notification (requires SMTP env vars)
+  python batch_cli.py --source nasdaq --deploy --netlify-site your-site --notify-email team@example.com
 """
     )
     
@@ -128,7 +142,18 @@ Examples:
         "--output", "-o",
         type=str,
         default="./reports",
-        help="Output directory for reports (default: ./reports)"
+        help="Base output directory for reports (default: ./reports)"
+    )
+    parser.add_argument(
+        "--date-folder",
+        action="store_true",
+        default=True,
+        help="Create date-based subdirectory (default: True)"
+    )
+    parser.add_argument(
+        "--no-date-folder",
+        action="store_true",
+        help="Don't create date-based subdirectory"
     )
     parser.add_argument(
         "--max",
@@ -148,6 +173,11 @@ Examples:
         help="Skip fetching financial statements (faster)"
     )
     parser.add_argument(
+        "--no-news",
+        action="store_true",
+        help="Skip news sentiment analysis (faster)"
+    )
+    parser.add_argument(
         "--api-key",
         type=str,
         help="Alpha Vantage API key (or set ALPHA_VANTAGE_API_KEY env var)"
@@ -157,7 +187,40 @@ Examples:
         action="store_true",
         help="Suppress progress output"
     )
-    
+
+    # Deployment options
+    parser.add_argument(
+        "--deploy",
+        action="store_true",
+        help="Deploy reports to Netlify after analysis"
+    )
+    parser.add_argument(
+        "--netlify-site",
+        type=str,
+        metavar="SITE_ID",
+        help="Netlify site ID (e.g., singular-douhua-5443a7) or set NETLIFY_SITE_ID env var"
+    )
+
+    # Notification options
+    parser.add_argument(
+        "--notify-email",
+        type=str,
+        metavar="EMAIL",
+        help="Send email notification to this address (comma-separated for multiple)"
+    )
+    parser.add_argument(
+        "--notify-whatsapp",
+        type=str,
+        metavar="PHONE",
+        help="Send WhatsApp notification to this number (with country code, e.g., +1234567890)"
+    )
+    parser.add_argument(
+        "--report-url",
+        type=str,
+        default=None,
+        help="Public URL for reports (auto-set if --deploy is used)"
+    )
+
     args = parser.parse_args()
 
     # Get API key (may not be required for NASDAQ-only source)
@@ -256,6 +319,12 @@ Examples:
 
     verbose = not args.quiet
 
+    # Determine output directory (with optional date subfolder)
+    output_dir = args.output
+    if args.date_folder and not args.no_date_folder:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        output_dir = os.path.join(args.output, date_str)
+
     if verbose:
         print("=" * 60)
         print("Short Gainers Batch Analysis")
@@ -265,6 +334,7 @@ Examples:
             print(f"Sources: {', '.join(sources)}")
             if "nasdaq" in sources:
                 print(f"NASDAQ category: {nasdaq_category}")
+        print(f"Output: {output_dir}")
 
     try:
         result = run_batch_analysis_sync(
@@ -275,10 +345,11 @@ Examples:
             watchlist_path=watchlist_path,
             screener_path=screener_path,
             alpha_vantage_key=api_key,
-            output_dir=args.output,
+            output_dir=output_dir,
             max_tickers=args.max,
             min_change=args.min_change,
             include_financials=not args.no_financials,
+            include_news=not args.no_news,
             verbose=verbose
         )
 
@@ -294,6 +365,94 @@ Examples:
                 print(f"  {os.path.basename(f)}")
             if len(result['files']) > 10:
                 print(f"  ... and {len(result['files']) - 10} more")
+
+        # Deploy to Netlify if requested
+        report_url = args.report_url or "http://localhost:5000"
+
+        if args.deploy:
+            from .deploy import deploy_to_netlify
+
+            if verbose:
+                print("\n" + "=" * 60)
+                print("Deploying to Netlify")
+                print("=" * 60)
+
+            site_id = args.netlify_site or os.environ.get("NETLIFY_SITE_ID", "")
+            if not site_id:
+                print("Error: --netlify-site or NETLIFY_SITE_ID env var required for deployment")
+            else:
+                deploy_result = deploy_to_netlify(
+                    reports_dir=result['output_dir'],
+                    site_id=site_id,
+                )
+
+                if deploy_result.success:
+                    report_url = deploy_result.url
+                    print(f"Deployed successfully!")
+                    print(f"Live URL: {report_url}")
+                else:
+                    print(f"Deployment failed: {deploy_result.error}")
+
+        # Send notifications if configured
+        if args.notify_email or args.notify_whatsapp:
+            from .notifications import (
+                NotificationConfig,
+                send_notifications,
+                open_whatsapp_web,
+            )
+
+            # Get list of tickers analyzed
+            tickers_analyzed = [
+                os.path.basename(f).replace(".html", "")
+                for f in result.get("files", [])
+                if f.endswith(".html") and "index" not in f.lower()
+            ]
+
+            if verbose:
+                print("\n" + "=" * 60)
+                print("Sending Notifications")
+                print("=" * 60)
+
+            # Email notification
+            if args.notify_email:
+                config = NotificationConfig(
+                    email_enabled=True,
+                    smtp_server=os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
+                    smtp_port=int(os.environ.get("SMTP_PORT", "587")),
+                    smtp_username=os.environ.get("SMTP_USERNAME", ""),
+                    smtp_password=os.environ.get("SMTP_PASSWORD", ""),
+                    email_from=os.environ.get("EMAIL_FROM", ""),
+                    email_to=[e.strip() for e in args.notify_email.split(",")],
+                    report_url=report_url,
+                )
+                send_notifications(result, tickers_analyzed, config)
+
+            # WhatsApp notification (opens WhatsApp Web)
+            if args.notify_whatsapp:
+                phone = args.notify_whatsapp.replace("+", "").replace("-", "").replace(" ", "")
+                
+                # Build detailed message with key indicators for each ticker
+                ticker_summaries = []
+                dashboards = result.get("dashboards", [])
+                for d in dashboards[:10]:  # Limit to 10 for message length
+                    rsi = f"RSI:{d.rsi_14:.0f}" if d.rsi_14 else "RSI:--"
+                    bb = f"BB:{d.bollinger_percent_above:+.0f}%" if d.bollinger_percent_above else "BB:--"
+                    score = f"Score:{d.final_score:.1f}"
+                    expr = d.expression
+                    chg = f"{d.change_percent:+.1f}%"
+                    ticker_summaries.append(f"*{d.ticker}* {chg} | {rsi} | {bb} | {score} | {expr}")
+                
+                ticker_details = "\n".join(ticker_summaries) if ticker_summaries else "No analysis data"
+                
+                message = f"""*Short Gainers Report* 📊
+
+{ticker_details}
+
+View Full Reports: {report_url}"""
+
+                if verbose:
+                    print(f"Opening WhatsApp Web for {args.notify_whatsapp}...")
+                open_whatsapp_web(phone, message)
 
         # Return success
         sys.exit(0)
