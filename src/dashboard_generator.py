@@ -918,17 +918,42 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
             padding: 20px;
         }}
         .container {{ max-width: 1400px; margin: 0 auto; }}
-        
+
         .header {{
             text-align: center;
             padding: 30px;
             background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
-            border-radius: 16px;
-            margin-bottom: 20px;
+            border-radius: 16px 16px 0 0;
         }}
         .header h1 {{ font-size: 2rem; margin-bottom: 10px; }}
         .header p {{ opacity: 0.8; }}
-        
+
+        /* Tabs */
+        .tabs {{
+            display: flex;
+            background: rgba(255,255,255,0.05);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            border-radius: 0 0 0 0;
+            margin-bottom: 20px;
+        }}
+        .tab {{
+            padding: 14px 28px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #888;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            user-select: none;
+        }}
+        .tab:hover {{ color: #ccc; }}
+        .tab.active {{
+            color: #60a5fa;
+            border-bottom-color: #60a5fa;
+        }}
+        .tab-content {{ display: none; }}
+        .tab-content.active {{ display: block; }}
+
         .stats {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -943,7 +968,7 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
         }}
         .stat-value {{ font-size: 2rem; font-weight: 700; }}
         .stat-label {{ font-size: 0.85rem; color: #888; margin-top: 5px; }}
-        
+
         table {{
             width: 100%;
             border-collapse: collapse;
@@ -966,11 +991,11 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
         tr:hover {{
             background: rgba(255,255,255,0.05);
         }}
-        
+
         .danger {{ color: #ef4444; }}
         .warning {{ color: #fbbf24; }}
         .success {{ color: #22c55e; }}
-        
+
         .flag-mini {{
             display: inline-block;
             padding: 2px 6px;
@@ -980,14 +1005,14 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
             color: #ef4444;
             margin-right: 4px;
         }}
-        
+
         .footer {{
             text-align: center;
             padding: 30px;
             color: #666;
             font-size: 0.85rem;
         }}
-        
+
         .legend {{
             display: flex;
             gap: 20px;
@@ -1007,6 +1032,67 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
             height: 12px;
             border-radius: 50%;
         }}
+
+        /* Admin tab styles */
+        .admin-panel {{
+            max-width: 600px;
+            margin: 0 auto;
+        }}
+        .admin-card {{
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 25px;
+        }}
+        .admin-card label {{
+            display: block;
+            color: #aaa;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }}
+        .admin-card input[type="text"] {{
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 1rem;
+            margin-bottom: 20px;
+        }}
+        .admin-card input[type="text"]::placeholder {{ color: #555; }}
+        .admin-card input[type="text"]:focus {{ outline: none; border-color: #60a5fa; }}
+        .admin-btn {{
+            display: inline-block;
+            padding: 14px 36px;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: opacity 0.2s;
+        }}
+        .admin-btn:hover {{ opacity: 0.9; }}
+        .admin-btn:disabled {{ opacity: 0.4; cursor: not-allowed; }}
+        #status {{ margin-top: 25px; display: none; }}
+        .status-box {{ background: rgba(0,0,0,0.3); border-radius: 8px; padding: 20px; }}
+        .spinner {{
+            display: inline-block; width: 18px; height: 18px;
+            border: 2px solid rgba(255,255,255,0.3); border-top-color: #60a5fa;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            vertical-align: middle; margin-right: 8px;
+        }}
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+        .result-success {{ color: #22c55e; }}
+        .result-error {{ color: #ef4444; }}
+        .result-link {{ display: inline-block; margin-top: 12px; color: #60a5fa; text-decoration: none; }}
+        .result-link:hover {{ text-decoration: underline; }}
+        .tickers-list {{ margin-top: 8px; color: #aaa; font-size: 0.9rem; }}
     </style>
 </head>
 <body>
@@ -1015,57 +1101,140 @@ def generate_index_html(candidates: list, analysis_date: str = None) -> str:
             <h1>&#128200; Short Gainers Analysis</h1>
             <p>Analysis Date: {analysis_date} | Click any row for detailed analysis</p>
         </div>
-        
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-value">{total}</div>
-                <div class="stat-label">Tickers Analyzed</div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('dashboard')">Dashboard</div>
+            <div class="tab" onclick="switchTab('admin')">Admin</div>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="tab-dashboard" class="tab-content active">
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value">{total}</div>
+                    <div class="stat-label">Tickers Analyzed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #22c55e;">{actionable}</div>
+                    <div class="stat-label">Actionable Candidates</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{avg_score:.1f}</div>
+                    <div class="stat-label">Avg Short Score</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color: #ef4444;">{high_squeeze}</div>
+                    <div class="stat-label">High Squeeze Risk</div>
+                </div>
             </div>
-            <div class="stat-card">
-                <div class="stat-value" style="color: #22c55e;">{actionable}</div>
-                <div class="stat-label">Actionable Candidates</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{avg_score:.1f}</div>
-                <div class="stat-label">Avg Short Score</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" style="color: #ef4444;">{high_squeeze}</div>
-                <div class="stat-label">High Squeeze Risk</div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Ticker</th>
+                        <th>Company</th>
+                        <th>Score</th>
+                        <th>Expression</th>
+                        <th>Change</th>
+                        <th>Price</th>
+                        <th>RSI</th>
+                        <th>Flags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+
+            <div class="legend">
+                <div class="legend-item"><div class="legend-dot" style="background: #22c55e;"></div> Score 7+ (Strong)</div>
+                <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div> Score 5-7 (Moderate)</div>
+                <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Score &lt;5 (Weak/Avoid)</div>
+                <div class="legend-item"><span style="color: #fbbf24; font-weight: 600;">(W)</span> = Warrant</div>
             </div>
         </div>
-        
-        <table>
-            <thead>
-                <tr>
-                    <th>#</th>
-                    <th>Ticker</th>
-                    <th>Company</th>
-                    <th>Score</th>
-                    <th>Expression</th>
-                    <th>Change</th>
-                    <th>Price</th>
-                    <th>RSI</th>
-                    <th>Flags</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows_html}
-            </tbody>
-        </table>
-        
-        <div class="legend">
-            <div class="legend-item"><div class="legend-dot" style="background: #22c55e;"></div> Score 7+ (Strong)</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div> Score 5-7 (Moderate)</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div> Score &lt;5 (Weak/Avoid)</div>
-            <div class="legend-item"><span style="color: #fbbf24; font-weight: 600;">(W)</span> = Warrant</div>
+
+        <!-- Admin Tab -->
+        <div id="tab-admin" class="tab-content">
+            <div class="admin-panel">
+                <div class="admin-card">
+                    <label for="tickers">Ticker Symbols (comma-separated)</label>
+                    <input type="text" id="tickers" placeholder="e.g. RVSNW, QNCX, JZXN">
+
+                    <label for="changes">Change Percentages (optional, comma-separated)</label>
+                    <input type="text" id="changes" placeholder="e.g. 103.8, 122.5, 82.0">
+
+                    <button class="admin-btn" id="submitBtn" onclick="submitAnalysis()">Analyze &amp; Deploy</button>
+
+                    <div id="status">
+                        <div class="status-box">
+                            <div id="statusText"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        
+
         <div class="footer">
             <p>Generated by Short Gainers Agent v0.2.0</p>
             <p style="margin-top: 10px;">&#9888;&#65039; This is research only, not investment advice. Trading involves substantial risk of loss.</p>
         </div>
     </div>
+
+    <script>
+        function switchTab(name) {{
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + name).classList.add('active');
+            document.querySelector('[onclick="switchTab(\\'' + name + '\\')"]').classList.add('active');
+            if (name === 'admin') history.replaceState(null, '', '#admin');
+            else history.replaceState(null, '', location.pathname);
+        }}
+
+        // Open admin tab if URL has #admin
+        if (location.hash === '#admin') switchTab('admin');
+
+        async function submitAnalysis() {{
+            const tickersInput = document.getElementById('tickers').value.trim();
+            if (!tickersInput) {{ alert('Please enter at least one ticker symbol.'); return; }}
+
+            const changesInput = document.getElementById('changes').value.trim();
+            const btn = document.getElementById('submitBtn');
+            const status = document.getElementById('status');
+            const statusText = document.getElementById('statusText');
+
+            btn.disabled = true;
+            status.style.display = 'block';
+            statusText.innerHTML = '<span class="spinner"></span> Running analysis and deploying...';
+
+            try {{
+                const body = {{ tickers: tickersInput }};
+                if (changesInput) body.changes = changesInput;
+
+                const resp = await fetch('/api/analyze', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify(body),
+                }});
+
+                const data = await resp.json();
+
+                if (data.success) {{
+                    let h = '<span class="result-success">&#10004; Analysis complete!</span>';
+                    h += '<div class="tickers-list"><strong>' + data.count + '</strong> ticker(s) analyzed: ' + data.tickers.join(', ') + '</div>';
+                    if (data.url) h += '<a class="result-link" href="' + data.url + '" target="_blank">View deployed site &rarr;</a>';
+                    statusText.innerHTML = h;
+                }} else {{
+                    statusText.innerHTML = '<span class="result-error">&#10008; Error: ' + (data.error || 'Unknown error') + '</span>';
+                }}
+            }} catch (err) {{
+                statusText.innerHTML = '<span class="result-error">&#10008; Request failed: ' + err.message + '</span>';
+            }} finally {{
+                btn.disabled = false;
+            }}
+        }}
+    </script>
 </body>
 </html>'''
     

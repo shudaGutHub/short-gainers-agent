@@ -978,7 +978,7 @@ class BatchAnalyzer:
             
             if self.config.verbose:
                 print(f"  Generated: index.html")
-        
+
         return {
             "output_dir": output_dir,
             "files": generated_files,

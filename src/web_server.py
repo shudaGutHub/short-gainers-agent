@@ -13,12 +13,17 @@ Usage:
 
 import argparse
 import http.server
+import json
 import os
 import socketserver
 import webbrowser
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class ReportHandler(http.server.SimpleHTTPRequestHandler):
@@ -37,6 +42,13 @@ class ReportHandler(http.server.SimpleHTTPRequestHandler):
             self.send_landing_page()
             return
 
+        # Redirect /admin to index with hash
+        if path == "/admin":
+            self.send_response(302)
+            self.send_header("Location", "/#admin")
+            self.end_headers()
+            return
+
         # API endpoint for listing reports
         if path == "/api/reports":
             self.send_reports_list()
@@ -44,6 +56,89 @@ class ReportHandler(http.server.SimpleHTTPRequestHandler):
 
         # Default file serving
         super().do_GET()
+
+    def do_POST(self):
+        """Handle POST requests for the analysis API."""
+        path = unquote(self.path)
+
+        if path == "/api/analyze":
+            self._handle_analyze()
+        else:
+            self.send_response(404)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not found"}).encode())
+
+    def _handle_analyze(self):
+        """Run analysis on provided tickers and deploy."""
+        try:
+            # Read and parse request body
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
+
+            tickers_str = data.get("tickers", "")
+            changes_str = data.get("changes", "")
+
+            if not tickers_str:
+                self._send_json(400, {"success": False, "error": "No tickers provided"})
+                return
+
+            # Parse tickers
+            ticker_list = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
+            change_list = []
+            if changes_str:
+                change_list = [float(c.strip()) for c in changes_str.split(",") if c.strip()]
+
+            # Build TickerInput objects
+            from .batch_processor import TickerInput
+            ticker_inputs = []
+            for i, ticker in enumerate(ticker_list):
+                change = change_list[i] if i < len(change_list) else None
+                ticker_inputs.append(TickerInput(ticker=ticker, change_percent=change))
+
+            # Send immediate response that analysis is starting
+            # (run synchronously so the client gets the result)
+            import asyncio
+            from .batch_processor import run_batch_analysis
+            from .deploy import deploy_to_netlify
+
+            reports_dir = str(self.reports_dir)
+
+            # Run analysis
+            result = asyncio.run(run_batch_analysis(
+                tickers=ticker_inputs,
+                output_dir=reports_dir,
+                include_financials=True,
+                include_news=True,
+                verbose=True,
+            ))
+
+            # Deploy
+            deploy_result = deploy_to_netlify(reports_dir=reports_dir)
+
+            url = deploy_result.url if deploy_result.success else None
+
+            self._send_json(200, {
+                "success": True,
+                "count": result.get("count", 0),
+                "tickers": ticker_list,
+                "url": url,
+            })
+
+        except json.JSONDecodeError:
+            self._send_json(400, {"success": False, "error": "Invalid JSON body"})
+        except Exception as e:
+            self._send_json(500, {"success": False, "error": str(e)})
+
+    def _send_json(self, status_code: int, data: dict):
+        """Send a JSON response."""
+        body = json.dumps(data).encode()
+        self.send_response(status_code)
+        self.send_header("Content-type", "application/json")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
 
     def send_landing_page(self):
         """Send a landing page when no reports exist."""
@@ -56,8 +151,6 @@ class ReportHandler(http.server.SimpleHTTPRequestHandler):
 
     def send_reports_list(self):
         """Send JSON list of available reports."""
-        import json
-
         reports = []
         if self.reports_dir.exists():
             for f in sorted(self.reports_dir.glob("*.html"), key=lambda x: x.stat().st_mtime, reverse=True):
