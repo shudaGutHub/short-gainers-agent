@@ -936,12 +936,22 @@ class BatchAnalyzer:
         """Analyze top gainers from market data."""
         if self.config.verbose:
             print("Fetching top gainers...")
-        
+
         gainers = await self.fetch_top_gainers()
-        
+
         if self.config.verbose:
             print(f"Found {len(gainers)} gainers above {self.config.min_change_percent}% threshold")
-        
+
+        # Detect warrants and inject underlying tickers
+        count_before = len(gainers)
+        gainers = expand_warrants(gainers)
+        warrants_found = [t for t in gainers if t.is_warrant]
+        underlyings_added = len(gainers) - count_before
+        if self.config.verbose and warrants_found:
+            print(f"Detected {len(warrants_found)} warrant(s): {', '.join(t.ticker for t in warrants_found)}")
+            if underlyings_added:
+                print(f"  Auto-added {underlyings_added} underlying ticker(s)")
+
         return await self.analyze_tickers(gainers)
     
     def generate_reports(self, dashboards: list, output_dir: Optional[str] = None) -> dict:
