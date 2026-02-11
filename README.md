@@ -10,109 +10,86 @@ An autonomous trading research agent for identifying and ranking short candidate
 - **Financial Analysis**: Cash flow, sustainability assessment, and valuation reality checks
 - **Risk-Aware Scoring**: Automatic trade expression selection (SHORT_SHARES, BUY_PUTS, PUT_SPREADS, AVOID)
 
-## Installation
+## Setup
 
 ```bash
-# Clone or download the project
-cd short_gainers_agent
+# 1. Clone the project
+git clone <repo-url> && cd short-gainers-agent
 
-# Install dependencies
+# 2. Create a virtual environment and install
+python -m venv venv
+venv\Scripts\activate        # Windows
 pip install -e .
 
-# Or install with dev dependencies
-pip install -e ".[dev]"
-
-# Set your API key
-export ALPHA_VANTAGE_API_KEY=your_key_here
+# 3. Create .env from the example and add your API keys
+copy .env.example .env
+# Edit .env and set ALPHA_VANTAGE_API_KEY
+# Also set NETLIFY_AUTH_TOKEN if you want auto-deploy
 ```
 
-## Quick Start
+## Usage
 
-### 1. Analyze Top Gainers (CLI)
+### Run once (analyze + deploy)
 
 ```bash
-# Analyze today's top NASDAQ gainers
-short-gainers-batch --top-gainers
-
-# Limit to 10 tickers with 20%+ change
-short-gainers-batch --top-gainers --max 10 --min-change 20
-
-# Custom output directory
-short-gainers-batch --top-gainers -o ./my_reports
+python -m src.batch_cli --top-gainers --deploy --netlify-site 016ab674-a973-46a3-b463-8db18018b182
 ```
 
-### 2. Analyze Specific Tickers (CLI)
+Or double-click **`run_scheduled.bat`** — it activates the venv, runs analysis, deploys, and logs to `logs/`.
+
+### Auto-refresh every 15 minutes (market hours)
+
+The scheduler runs the analysis automatically Mon-Fri, 9:30 AM - 4:00 PM ET.
+
+**One-time setup** (requires Administrator):
+
+```powershell
+# Right-click Start → Terminal (Admin), then:
+cd C:\Users\salee\BITBUCKET\short-gainers-agent
+powershell -ExecutionPolicy Bypass -File setup_scheduler.ps1
+```
+
+That's it. The task appears in Windows Task Scheduler as **ShortGainersRefresh**.
+
+**Manage the scheduler:**
+
+| Action | Command |
+|--------|---------|
+| Check status | Open Task Scheduler → find `ShortGainersRefresh` |
+| Run manually | Right-click the task → Run |
+| Pause | Right-click the task → Disable |
+| Resume | Right-click the task → Enable |
+| Remove | `Unregister-ScheduledTask -TaskName ShortGainersRefresh` (Admin PowerShell) |
+| View logs | Check `logs/` folder — one file per run |
+
+### Other CLI examples
 
 ```bash
-# Simple ticker list
-short-gainers-batch --tickers TCGL,AAPL,MSFT
+# Specific tickers
+python -m src.batch_cli --tickers TCGL,AAPL,MSFT
 
 # With known change percentages
-short-gainers-batch --tickers TCGL,AAPL --changes 941,5
+python -m src.batch_cli --tickers TCGL,AAPL --changes 941,5
 
-# With prices too
-short-gainers-batch --tickers TCGL,AAPL --changes 941,5 --prices 90.90,180.00
+# Limit results, higher threshold
+python -m src.batch_cli --top-gainers --max 10 --min-change 20
 
 # Skip financials for faster analysis
-short-gainers-batch --tickers TCGL --no-financials
-```
+python -m src.batch_cli --tickers TCGL --no-financials
 
-### 3. Analyze from File (CLI)
-
-Create a file `tickers.txt`:
-```
-# Format: TICKER,change_percent,price
-TCGL,941,90.90
-AAPL,2.5,180.00
-MSFT
-```
-
-Then run:
-```bash
-short-gainers-batch --file tickers.txt
-```
-
-### 4. Programmatic Usage (Python)
-
-```python
-import asyncio
-from src.batch_processor import run_batch_analysis, TickerInput
-
-async def main():
-    # Analyze top gainers
-    result = await run_batch_analysis(
-        use_top_gainers=True,
-        output_dir="./reports",
-        max_tickers=20,
-        min_change=10.0,
-        include_financials=True
-    )
-    
-    # Or analyze specific tickers
-    tickers = [
-        TickerInput("TCGL", 941.0, 90.90),
-        TickerInput("AAPL", 2.5),
-        "MSFT",  # Simple string also works
-    ]
-    
-    result = await run_batch_analysis(
-        tickers=tickers,
-        output_dir="./reports/manual"
-    )
-    
-    print(f"Generated {result['count']} reports")
-    print(f"Index page: {result['output_dir']}/index.html")
-
-asyncio.run(main())
+# Multi-source with watchlist
+python -m src.batch_cli --source nasdaq,watchlist --watchlist ./tickers.csv
 ```
 
 ## Output
 
-The agent generates:
+**Live dashboard:** [kaos-short.netlify.app](https://kaos-short.netlify.app)
+
+Reports are generated to `reports/YYYY-MM-DD/` and deployed to Netlify. Each run shows a "Last Updated" timestamp on the page.
 
 1. **Index Page** (`index.html`): Summary table of all candidates sorted by score
 2. **Individual Dashboards** (`TICKER.html`): Rich visual analysis for each ticker including:
-   - Price data and technical indicators (RSI, Bollinger Bands, ATR)
+   - Price data and technical indicators (RSI, Bollinger Bands, ATR, MACD)
    - Risk flags and composite risk assessment
    - Catalyst/sentiment analysis
    - Score calculation breakdown
@@ -150,15 +127,17 @@ The agent generates:
 ## Project Structure
 
 ```
-short_gainers_agent/
+short-gainers-agent/
+├── run_scheduled.bat          # Run analysis + deploy (double-click or scheduled)
+├── setup_scheduler.ps1        # One-time: register Windows Task Scheduler job
 ├── src/
+│   ├── batch_cli.py           # Command-line interface
 │   ├── batch_processor.py     # Batch analysis engine
-│   ├── batch_cli.py           # Command-line interface for batch
 │   ├── dashboard_generator.py # HTML report generator
+│   ├── deploy.py              # Netlify deployment
 │   ├── pipeline.py            # Main orchestration
-│   ├── main.py                # Original CLI
 │   ├── clients/               # API clients
-│   ├── ingest/                # Data ingestion
+│   ├── ingest/                # Data ingestion (NASDAQ, watchlists, screeners)
 │   ├── technicals/            # Technical analysis
 │   ├── filters/               # Pre-filtering
 │   ├── sentiment/             # Catalyst analysis
@@ -166,26 +145,30 @@ short_gainers_agent/
 │   ├── output/                # Output formatting
 │   └── models/                # Data models
 ├── tests/                     # Unit and integration tests
-├── examples/                  # Example scripts
-└── reports/                   # Generated reports (gitignored)
+├── reports/                   # Generated reports (gitignored)
+└── logs/                      # Scheduler run logs (gitignored)
 ```
 
 ## Requirements
 
 - Python 3.11+
-- Alpha Vantage API key (free tier works)
-- Dependencies: aiohttp, httpx, pandas, numpy, pydantic
+- Windows (for scheduled auto-refresh; analysis works on any OS)
+- Alpha Vantage API key ([get one free](https://www.alphavantage.co/support/#api-key))
+- Netlify CLI + auth token (for auto-deploy)
 
 ## Configuration
 
-Set environment variables:
+All config lives in `.env` (copy from `.env.example`):
 
 ```bash
 # Required
-export ALPHA_VANTAGE_API_KEY=your_key_here
+ALPHA_VANTAGE_API_KEY=your_key_here
+
+# Required for deploy
+NETLIFY_AUTH_TOKEN=your_token_here
 
 # Optional (for Claude-based sentiment analysis)
-export ANTHROPIC_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
 ```
 
 ## Development
@@ -201,22 +184,6 @@ pytest tests/test_batch.py -v
 ruff check src/
 ```
 
-## Implementation Status
-
-| Phase | Module | Status |
-|-------|--------|--------|
-| 1 | Config, Models, Clients | Done |
-| 2 | Ingest (gainers, price, fundamentals) | Done |
-| 3 | Technicals (indicators, scoring) | Done |
-| 4 | Filters (prefilter, risk flags) | Done |
-| 5 | Sentiment (catalyst analysis) | Done |
-| 6 | Ranking + Output | Done |
-| 7 | Orchestration + CLI | Done |
-| 8 | Integration Tests | Done |
-| 9 | Batch Processing + Dashboards | Done |
-
-**Total: ~6,500 lines of code, 116+ tests**
-
 ## Disclaimer
 
-This is research software only, not investment advice. Trading involves substantial risk of loss. Always do your own due diligence and consult with a qualified financial advisor.
+This is research software only, not investment advice. Trading involves substantial risk of loss.

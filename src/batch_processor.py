@@ -960,6 +960,7 @@ class BatchAnalyzer:
         os.makedirs(output_dir, exist_ok=True)
         
         analysis_date = datetime.now().strftime("%Y-%m-%d")
+        last_updated = datetime.now().strftime("%I:%M %p ET")
         generated_files = []
         
         # Generate individual dashboards
@@ -978,7 +979,7 @@ class BatchAnalyzer:
         
         # Generate index page
         if self.config.generate_index:
-            index_html = generate_index_html(dashboards, analysis_date)
+            index_html = generate_index_html(dashboards, analysis_date, last_updated)
             index_path = os.path.join(output_dir, "index.html")
             
             with open(index_path, "w", encoding="utf-8") as f:
