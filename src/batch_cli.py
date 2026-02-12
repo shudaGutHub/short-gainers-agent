@@ -137,6 +137,18 @@ Examples:
         help="Comma-separated prices (must match --tickers count)"
     )
     
+    # Extra tickers (always included alongside any source)
+    parser.add_argument(
+        "--extra-tickers",
+        type=str,
+        help="Comma-separated tickers to always include (e.g. SNDK,WDC)"
+    )
+    parser.add_argument(
+        "--extra-tickers-file",
+        type=str,
+        help="Path to file with extra tickers (one per line)"
+    )
+
     # Configuration
     parser.add_argument(
         "--output", "-o",
@@ -325,6 +337,20 @@ Examples:
         date_str = datetime.now().strftime('%Y-%m-%d')
         output_dir = os.path.join(args.output, date_str)
 
+    # Parse extra tickers
+    extra_tickers = []
+    if args.extra_tickers:
+        extra_tickers.extend([t.strip().upper() for t in args.extra_tickers.split(",") if t.strip()])
+    if args.extra_tickers_file:
+        if not os.path.exists(args.extra_tickers_file):
+            print(f"Error: Extra tickers file not found: {args.extra_tickers_file}", file=sys.stderr)
+            sys.exit(1)
+        with open(args.extra_tickers_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    extra_tickers.append(line.split(",")[0].strip().upper())
+
     if verbose:
         print("=" * 60)
         print("Short Gainers Batch Analysis")
@@ -334,6 +360,8 @@ Examples:
             print(f"Sources: {', '.join(sources)}")
             if "nasdaq" in sources:
                 print(f"NASDAQ category: {nasdaq_category}")
+        if extra_tickers:
+            print(f"Extra tickers: {', '.join(extra_tickers)}")
         print(f"Output: {output_dir}")
 
     try:
@@ -350,7 +378,8 @@ Examples:
             min_change=args.min_change,
             include_financials=not args.no_financials,
             include_news=not args.no_news,
-            verbose=verbose
+            verbose=verbose,
+            extra_tickers=extra_tickers or None,
         )
 
         if verbose:

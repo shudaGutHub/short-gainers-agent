@@ -45,10 +45,10 @@ for ($h = $startHour; $h -le $endHour; $h++) {
     $minEnd = if ($h -eq $endHour) { $endMinute } else { 45 }
 
     for ($m = $minStart; $m -le $minEnd; $m += 15) {
-        $timeStr = "{0:D2}:{1:D2}" -f $h, $m
+        $todayAt = (Get-Date -Hour $h -Minute $m -Second 0)
         $trigger = New-ScheduledTaskTrigger -Weekly `
             -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday `
-            -At $timeStr
+            -At $todayAt
         $Triggers += $trigger
     }
 }

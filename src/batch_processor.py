@@ -131,17 +131,25 @@ class BatchAnalyzer:
         self.base_url = "https://www.alphavantage.co/query"
         
     async def _fetch_json(self, params: dict) -> dict:
-        """Fetch JSON from Alpha Vantage API."""
+        """Fetch JSON from Alpha Vantage API with rate limit retry."""
         import aiohttp
-        
+
         params["apikey"] = self.av_key
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.base_url, params=params) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                else:
-                    return {}
+
+        for attempt in range(3):
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.base_url, params=params) as resp:
+                    if resp.status != 200:
+                        return {}
+                    data = await resp.json()
+                    # Alpha Vantage returns 200 with a "Note" or "Information" key when rate-limited
+                    if "Note" in data or "Information" in data:
+                        if attempt < 2:
+                            await asyncio.sleep(15)
+                            continue
+                        return {}
+                    return data
+        return {}
     
     async def fetch_top_gainers(self) -> list:
         """Fetch top gainers from Alpha Vantage."""
@@ -1014,7 +1022,8 @@ async def run_batch_analysis(
     min_volume: int = 100_000,
     include_financials: bool = True,
     include_news: bool = True,
-    verbose: bool = True
+    verbose: bool = True,
+    extra_tickers: Optional[list] = None,
 ) -> dict:
     """
     Convenience function to run batch analysis.
@@ -1091,6 +1100,19 @@ async def run_batch_analysis(
             print("Running analysis on top gainers (Alpha Vantage)...")
         dashboards = await analyzer.analyze_top_gainers()
 
+        # Merge extra tickers (e.g. from watchlist.txt)
+        if extra_tickers:
+            extra_inputs = _parse_extra_tickers(extra_tickers)
+            # Deduplicate against already-analyzed tickers
+            analyzed = {d.ticker.upper() for d in dashboards}
+            new_extras = [t for t in extra_inputs if t.ticker.upper() not in analyzed]
+            if new_extras:
+                new_extras = expand_warrants(new_extras)
+                if verbose:
+                    print(f"Adding {len(new_extras)} extra ticker(s): {', '.join(t.ticker for t in new_extras)}")
+                extra_dashboards = await analyzer.analyze_tickers(new_extras)
+                dashboards.extend(extra_dashboards)
+
         # Generate reports
         if verbose:
             print("Generating reports...")
@@ -1117,6 +1139,15 @@ async def run_batch_analysis(
                     change_percent=t.get("change_percent", t.get("change")),
                     current_price=t.get("current_price", t.get("price"))
                 ))
+
+    # Merge extra tickers (e.g. from watchlist.txt)
+    if extra_tickers:
+        extra_inputs = _parse_extra_tickers(extra_tickers)
+        existing = {t.ticker.upper() for t in ticker_inputs}
+        new_extras = [t for t in extra_inputs if t.ticker.upper() not in existing]
+        if new_extras and verbose:
+            print(f"Adding {len(new_extras)} extra ticker(s): {', '.join(t.ticker for t in new_extras)}")
+        ticker_inputs.extend(new_extras)
 
     if not ticker_inputs:
         if verbose:
@@ -1154,6 +1185,23 @@ async def run_batch_analysis(
         print(f"  Tickers analyzed: {result['count']}")
         print(f"  Reports saved to: {result['output_dir']}")
 
+    return result
+
+
+def _parse_extra_tickers(extra: list) -> list:
+    """Convert a mixed list of strings/dicts/TickerInputs into TickerInput objects."""
+    result = []
+    for t in extra:
+        if isinstance(t, str):
+            result.append(TickerInput(ticker=t.strip().upper()))
+        elif isinstance(t, TickerInput):
+            result.append(t)
+        elif isinstance(t, dict):
+            result.append(TickerInput(
+                ticker=t.get("ticker", t.get("symbol", "")).upper(),
+                change_percent=t.get("change_percent"),
+                current_price=t.get("current_price"),
+            ))
     return result
 
 

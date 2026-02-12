@@ -1,0 +1,4 @@
+# Extra tickers to always include in analysis
+# One ticker per line (lines starting with # are ignored)
+SNDK
+WDC
