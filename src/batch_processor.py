@@ -665,8 +665,8 @@ class BatchAnalyzer:
                 if mkt_cap < 300_000_000:
                     risk_flags.append("MICROCAP")
 
-            # Non-NASDAQ
-            if exchange and "NASDAQ" not in exchange.upper():
+            # Non-NASDAQ (only flag when we positively know the exchange)
+            if exchange and exchange != "Unknown" and "NASDAQ" not in exchange.upper():
                 risk_flags.append("NON_NASDAQ")
 
             # Low liquidity
