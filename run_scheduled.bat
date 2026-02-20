@@ -27,7 +27,7 @@ REM Activate virtual environment
 call "%VENV_DIR%\Scripts\activate.bat"
 
 REM Run the analysis with deploy
-python -m src.batch_cli --top-gainers --extra-tickers-file "%PROJECT_DIR%watchlist.txt" --deploy --netlify-site 016ab674-a973-46a3-b463-8db18018b182 >> "%LOG_FILE%" 2>&1
+python -m src.batch_cli --source nasdaq --extra-tickers-file "%PROJECT_DIR%watchlist.txt" --deploy --netlify-site 016ab674-a973-46a3-b463-8db18018b182 >> "%LOG_FILE%" 2>&1
 
 echo. >> "%LOG_FILE%"
 echo Run finished: %date% %time% >> "%LOG_FILE%"
