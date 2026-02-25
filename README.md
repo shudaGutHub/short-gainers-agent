@@ -62,6 +62,18 @@ That's it. The task appears in Windows Task Scheduler as **ShortGainersRefresh**
 | Remove | `Unregister-ScheduledTask -TaskName ShortGainersRefresh` (Admin PowerShell) |
 | View logs | Check `logs/` folder — one file per run |
 
+### Adding tickers to the watchlist
+
+The file `watchlist.txt` contains extra tickers that are always included alongside the NASDAQ top gainers. To add a ticker:
+
+1. Edit `watchlist.txt` — add one ticker per line (lines starting with `#` are ignored)
+2. Run the analysis to regenerate reports and deploy:
+   - Double-click `run_scheduled.bat`, **or**
+   - Run manually: `python -m src.batch_cli --source nasdaq --extra-tickers-file watchlist.txt --deploy --netlify-site 016ab674-a973-46a3-b463-8db18018b182`
+3. Reports are deployed to [kaos-short.netlify.app](https://kaos-short.netlify.app)
+
+> **Note:** A `git push` alone does NOT update the live site. The site is not built by Netlify — the analysis runs locally and the generated HTML is deployed to Netlify. You must run `run_scheduled.bat` (or wait for the next scheduled run) for changes to appear.
+
 ### Other CLI examples
 
 ```bash
@@ -128,6 +140,7 @@ Reports are generated to `reports/YYYY-MM-DD/` and deployed to Netlify. Each run
 
 ```
 short-gainers-agent/
+├── watchlist.txt              # Extra tickers always included in analysis
 ├── run_scheduled.bat          # Run analysis + deploy (double-click or scheduled)
 ├── setup_scheduler.ps1        # One-time: register Windows Task Scheduler job
 ├── src/
